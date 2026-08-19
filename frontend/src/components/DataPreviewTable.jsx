@@ -76,8 +76,9 @@ export default function DataPreviewTable({
                 return (
                   <TableCell 
                     key={col} 
-                    className="bg-slate-100 font-bold text-slate-800 cursor-pointer hover:bg-slate-200 transition-colors px-1.5 py-0.5 text-[7.5px]"
-                    style={{ whiteSpace: 'nowrap' }}
+                    /* 💡 Made column header text bold per instructions */
+                    className="bg-slate-100 font-extrabold text-slate-900 cursor-pointer hover:bg-slate-200 transition-colors px-1.5 py-0.5 text-[8.5px]"
+                    style={{ whiteSpace: 'nowrap', fontWeight: 800 }}
                     onClick={(e) => handleHeaderClick(e, col)}
                   >
                     <div className="flex items-center justify-between space-x-1">
@@ -98,7 +99,7 @@ export default function DataPreviewTable({
                 {columns.map((col) => (
                   <TableCell 
                     key={col} 
-                    className="text-[7px] font-mono text-slate-700 px-1.5 py-0.2" 
+                    className="text-[7.5px] font-mono text-slate-700 px-1.5 py-0.2" 
                     style={{ whiteSpace: 'nowrap' }}
                   >
                     {row[col] !== null && row[col] !== undefined ? String(row[col]) : <span className="text-slate-300 italic">null</span>}

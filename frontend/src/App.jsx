@@ -45,6 +45,8 @@ export default function App() {
   const [page, setPage] = useState(1);
   const [rowsPerPage, setRowsPerPage] = useState(100);
   const [loading, setLoading] = useState(false);
+  const [loadingUrl, setLoadingUrl] = useState(false);
+  const [loadingImport, setLoadingImport] = useState(false);
 
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [isFullScreenTable, setIsFullScreenTable] = useState(false);
@@ -54,7 +56,7 @@ export default function App() {
   const [rules, setRules] = useState({});
   const [isAnonymizedView, setIsAnonymizedView] = useState(false);
 
-  // Multi-Platform Database State
+  // Multi-Platform Database State with Port & Warehouse support
   const [dbPlatform, setDbPlatform] = useState(''); 
   const [mysqlCreds, setMysqlCreds] = useState({ host: 'localhost', port: 3306, user: 'root', password: '' });
   const [snowflakeCreds, setSnowflakeCreds] = useState({ account: '', user: '', password: '', warehouse: 'COMPUTE_WH', role: '' });
@@ -68,7 +70,7 @@ export default function App() {
   const [selectedTables, setSelectedTables] = useState([]);
   const [loadingSchemas, setLoadingSchemas] = useState(false);
 
-  // Import Files Card State (Stacked Local Upload + Direct URL)
+  // Import Files Card State (Stacked Local Upload + Direct URL supporting local file paths)
   const [urlInput, setUrlInput] = useState('');
   const [isDragging, setIsDragging] = useState(false);
 
@@ -83,7 +85,7 @@ export default function App() {
 
   // AWS Smart Dynamic Dropdown States & Account Modes
   const [awsLoggedIn, setAwsLoggedIn] = useState(false);
-  const [awsAccountMode, setAwsAccountMode] = useState('same'); // 'same' or 'different'
+  const [awsAccountMode, setAwsAccountMode] = useState('same');
   const [awsBuckets, setAwsBuckets] = useState([]);
   const [awsFolders, setAwsFolders] = useState([]);
   const [selectedAwsBucket, setSelectedAwsBucket] = useState('');
@@ -443,7 +445,7 @@ export default function App() {
 
     if (tables.length === 0) return;
 
-    setLoading(true);
+    setLoadingImport(true);
     try {
       let lastLoadedName = '';
       let lastCols = [];
@@ -468,25 +470,50 @@ export default function App() {
     } catch (err) {
       alert("Error importing tables: " + (err.response?.data?.detail || err.message));
     } finally {
-      setLoading(false);
+      setLoadingImport(false);
     }
   };
 
+  // Enhanced to support both Web URLs and Local OS file paths
   const processUrlFetch = async (targetUrl = urlInput, overrideName = null) => {
     if (!targetUrl) return;
-    setLoading(true);
+    setLoadingUrl(true);
     try {
+      let cleanInput = targetUrl.trim();
+      if (cleanInput.startsWith("file:///")) {
+        cleanInput = cleanInput.replace("file:///", "").replace(/\//g, "\\");
+      }
+      
+      const isLocalPath = /^[a-zA-Z]:\\/.test(cleanInput) || cleanInput.startsWith("\\\\") || (cleanInput.includes(":\\") && !cleanInput.startsWith("http"));
+      
+      if (isLocalPath) {
+        try {
+          const pathParts = cleanInput.split(/[/\\]/);
+          const fileName = pathParts[pathParts.length - 1] || "local_file.csv";
+          const resText = await window.fs?.readFile?.(cleanInput, { encoding: 'utf8' });
+          if (resText) {
+            const blob = new Blob([resText], { type: 'text/plain' });
+            const fileObj = new File([blob], fileName, { type: "text/plain" });
+            await processFileUpload(fileObj, overrideName);
+            setLoadingUrl(false);
+            return;
+          }
+        } catch (localFileErr) {
+          console.warn("Direct local disk read restricted, falling back to backend parser or simulated read.", localFileErr);
+        }
+      }
+
       const res = await fetchFromUrl(targetUrl, overrideName);
       if (!overrideName && savedWorkspace[res.dataset_name]) {
-        setLoading(false);
+        setLoadingUrl(false);
         setDuplicateModal({ open: true, type: 'URL', payload: null, existingName: res.dataset_name });
         return;
       }
       await handleDatasetLoaded(res.dataset_name, res.columns);
     } catch (err) {
-      alert("URL Fetch Error: " + (err.response?.data?.detail || err.message));
+      alert("URL / File Path Fetch Error: " + (err.response?.data?.detail || err.message));
     } finally {
-      setLoading(false);
+      setLoadingUrl(false);
     }
   };
 
@@ -498,7 +525,6 @@ export default function App() {
 
     if (modalType === 'FILE') await processFileUpload(payload, versionedName);
     else if (modalType === 'URL') await processUrlFetch(urlInput, versionedName);
-    else if (modalType === 'S3') await processS3Fetch(payload, versionedName);
   };
 
   const handleSaveRule = (col, newRule) => {
@@ -646,7 +672,7 @@ export default function App() {
     }
   };
 
-  // COMPLETE CLEAN RESET ON HOME CLICK (WIPES ALL CREDENTIALS & WORKSPACE)
+  // FULL APPLICATION RESET ON HOME CLICK (Fresh Application Landing State)
   const handleHomeClick = () => {
     setHomeModalOpen(true);
   };
@@ -662,7 +688,6 @@ export default function App() {
     setSavedWorkspace({});
     localStorage.removeItem('saved_workspaces');
     
-    // Wipe all login and connection credentials completely
     setMysqlCreds({ host: 'localhost', port: 3306, user: 'root', password: '' });
     setSnowflakeCreds({ account: '', user: '', password: '', warehouse: 'COMPUTE_WH', role: '' });
     setDbConnected(false);
@@ -690,20 +715,46 @@ export default function App() {
   return (
     <div
       className={`flex flex-col h-screen w-screen overflow-hidden font-sans m-0 p-0 ${isFullScreenTable ? 'fixed inset-0 z-50' : ''}`}
-      style={{ backgroundColor: '#E3EBFA', position: 'fixed', top: 0, left: 0 }}
+      style={{ backgroundColor: '#DFF4FF', position: 'fixed', top: 0, left: 0 }}
     >
 
       {/* 🛡️ TITLE BANNER */}
       <header
-        className="flex items-center justify-between px-6 py-1.5 border-b flex-shrink-0"
+        className="relative flex items-center justify-between px-6 border-b flex-shrink-0"
         style={{
           background: '#FFFFFF',
           borderColor: '#E2E8F0',
           boxShadow: '0 2px 12px rgba(0,0,0,0.03)',
-          zIndex: 10
+          zIndex: 10,
+          height: '30px',
+          minHeight: '30px'
         }}
       >
-        <div className="flex items-center space-x-2.5">
+        {/* Toggle Hamburger button visible ONLY when sidebar is closed */}
+        {!isSidebarOpen && (
+          <IconButton
+            size="small"
+            onClick={() => setIsSidebarOpen(true)}
+            title="Open Sidebar"
+            style={{ color: '#1E293B' }}
+          >
+            <MenuIcon style={{ fontSize: 22 }} />
+          </IconButton>
+        )}
+        {isSidebarOpen && <div style={{ width: '24px' }} />}
+
+        {/* Perfectly centered header title */}
+        <div
+          style={{
+            position: 'absolute',
+            left: '50%',
+            top: '50%',
+            transform: 'translate(-50%, -50%)',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px'
+          }}
+        >
           <div
             style={{
               width: "30px",
@@ -732,7 +783,7 @@ export default function App() {
           </Typography>
         </div>
 
-        {activeDataset && (
+        {activeDataset ? (
           <div className="flex items-center space-x-2.5">
             <label className="switch" title="Toggle Anonymization View">
               <input
@@ -792,13 +843,15 @@ export default function App() {
               )}
             </IconButton>
           </div>
+        ) : (
+          <div style={{ width: '24px' }} />
         )}
       </header>
 
       {/* MAIN APP BODY SPLIT CONTAINER */}
       <div className="flex flex-1 overflow-hidden">
 
-        {/* 👈 LEFT SIDEBAR */}
+        {/* 👈 LEFT SIDEBAR (Hidden when closed, showing hamburger in header) */}
         {!isFullScreenTable && isSidebarOpen && (
           <aside
             className="w-56 flex flex-col justify-between p-2 shadow-xl border-r flex-shrink-0 h-full overflow-hidden"
@@ -825,7 +878,11 @@ export default function App() {
             <div className="space-y-3 overflow-y-auto flex-1 min-h-0 pr-1 pt-2">
               {activeDataset && (
                 <div className="flex flex-col pb-2 border-b" style={{ borderColor: '#94A3B8' }}>
-                  <Typography variant="caption" className="font-extrabold uppercase text-[10px] block mb-1 border-b pb-0.5 sticky top-0 bg-[#D5E7ED] z-10" style={{ color: '#4F46E5', borderColor: '#CBD5E1' }}>
+                  <Typography
+                    variant="caption"
+                    className="font-extrabold uppercase text-[14px]"
+                    style={{ color: '#4F46E5', borderColor: '#CBD5E1', fontWeight: 800 }}
+                  >
                     📊 Rule Registry ({Object.values(rules).filter(r => r && r.algo && r.algo !== 'None').length})
                   </Typography>
                   <div className="space-y-1 pr-1 overflow-y-auto max-h-[140px]">
@@ -842,7 +899,7 @@ export default function App() {
                       );
                     })}
                     {Object.values(rules).filter(r => r && r.algo && r.algo !== 'None').length === 0 && (
-                      <Typography variant="caption" className="italic block pl-1 text-[10px]" style={{ color: '#64748B' }}>
+                      <Typography variant="caption" className="italic block pl-1 text-[12px]" style={{ color: '#64748B' }}>
                         No rules configured.
                       </Typography>
                     )}
@@ -856,7 +913,11 @@ export default function App() {
                   style={{ borderColor: '#CBD5E1' }}
                   onClick={() => setIsWorkspacesOpen(!isWorkspacesOpen)}
                 >
-                  <Typography variant="caption" className="font-extrabold uppercase text-[10px]" style={{ color: '#4F46E5' }}>
+                  <Typography
+                    variant="caption"
+                    className="font-extrabold uppercase text-[14px]"
+                    style={{ color: '#4F46E5', fontWeight: 800 }}
+                  >
                     📁 {isWorkspacesOpen ? 'Hide Workspaces' : 'Saved Workspaces'}
                   </Typography>
                   <span className="text-[10px] font-bold" style={{ color: '#4F46E5' }}>{isWorkspacesOpen ? '▲' : '▼'}</span>
@@ -864,7 +925,7 @@ export default function App() {
 
                 {isWorkspacesOpen && (
                   Object.keys(savedWorkspace).length === 0 ? (
-                    <Typography variant="caption" className="italic block pl-1 text-[10px]" style={{ color: '#64748B' }}>
+                    <Typography variant="caption" className="italic block pl-1 text-[12px]" style={{ color: '#64748B' }}>
                       No saved workspaces.
                     </Typography>
                   ) : (
@@ -872,7 +933,7 @@ export default function App() {
                       {Object.keys(savedWorkspace).map(dsName => (
                         <div
                           key={dsName}
-                          className={`flex items-center justify-between p-1 rounded text-[11px] transition-colors cursor-pointer border ${
+                          className={`flex items-center justify-between p-1 rounded text-[10px] transition-colors cursor-pointer border ${
                             activeDataset === dsName ? 'font-bold' : ''
                           }`}
                           style={{
@@ -904,10 +965,13 @@ export default function App() {
                 )}
               </div>
 
-              {/* Data Ingestion Hub in left sidebar */}
               {activeDataset && (
                 <div className="pt-2 border-t" style={{ borderColor: '#CBD5E1' }}>
-                  <Typography variant="caption" className="font-extrabold uppercase text-[10px] block mb-1 border-b pb-0.5" style={{ color: '#4F46E5', borderColor: '#CBD5E1' }}>
+                  <Typography
+                    variant="caption"
+                    className="font-extrabold uppercase text-[14px] block mb-2 border-b pb-1"
+                    style={{ color: '#4F46E5', borderColor: '#CBD5E1', fontWeight: 800 }}
+                  >
                     🌐 Data Ingestion Hub
                   </Typography>
 
@@ -918,8 +982,8 @@ export default function App() {
                       component="label"
                       startIcon={<CloudUploadIcon style={{ fontSize: 11 }} />}
                       fullWidth
-                      className="text-[9px] font-bold py-0.5"
-                      style={{ backgroundColor: '#EEF2FF', border: '1px solid #C7D2FE', color: '#4F46E5' }}
+                      className="text-[12px] font-bold py-1"
+                      style={{ backgroundColor: '#f2f3f5', border: '1px solid #C7D2FE', color: '#4F46E5', fontWeight: 800 }}
                     >
                       Upload Files
                       <input type="file" multiple hidden onChange={handleFileUpload} />
@@ -928,7 +992,7 @@ export default function App() {
                     <div className="border-t pt-1" style={{ borderColor: '#E2E8F0' }}>
                       <div
                         onClick={() => setIsSidebarDbOpen(!isSidebarDbOpen)}
-                        className="flex justify-between items-center cursor-pointer py-1 px-1 bg-slate-100 rounded text-[9.5px] font-bold text-slate-700"
+                        className="flex justify-between items-center cursor-pointer py-1 px-1 bg-slate-100 rounded text-[08px] font-bold text-slate-700"
                       >
                         <span>🔌 DB or Server Connection</span>
                         <span>{isSidebarDbOpen ? '▲' : '▼'}</span>
@@ -939,7 +1003,7 @@ export default function App() {
                           <select
                             value={sbDbPlatform}
                             onChange={e => { setSbDbPlatform(e.target.value); setSbDbConnected(false); setSbDbList([]); setSbSchemaList([]); }}
-                            style={{ width: '100%', fontSize: '10px', padding: '2px', borderRadius: '3px', border: '1px solid #CBD5E1' }}
+                            style={{ width: '100%', fontSize: '10px', padding: '2px', borderRadius: '3px', border: '1px solid #CBD5E1', color: '#1E293B', backgroundColor: '#FFFFFF' }}
                           >
                             <option value="">Select DB</option>
                             <option value="MySQL">MySQL</option>
@@ -950,15 +1014,16 @@ export default function App() {
                             <div className="space-y-1">
                               {sbDbPlatform === 'MySQL' ? (
                                 <>
-                                  <input type="text" placeholder="Host" value={sbMysqlCreds.host} onChange={e => setSbMysqlCreds({ ...sbMysqlCreds, host: e.target.value })} style={{ width: '100%', fontSize: '10px', padding: '2px' }} />
-                                  <input type="text" placeholder="User" value={sbMysqlCreds.user} onChange={e => setSbMysqlCreds({ ...sbMysqlCreds, user: e.target.value })} style={{ width: '100%', fontSize: '10px', padding: '2px' }} />
-                                  <input type="password" placeholder="Pass" value={sbMysqlCreds.password} onChange={e => setSbMysqlCreds({ ...sbMysqlCreds, password: e.target.value })} style={{ width: '100%', fontSize: '10px', padding: '2px' }} />
+                                  <input type="text" placeholder="Host" value={sbMysqlCreds.host} onChange={e => setSbMysqlCreds({ ...sbMysqlCreds, host: e.target.value })} style={{ width: '100%', fontSize: '10px', padding: '2px', color: '#1E293B', backgroundColor: '#FFFFFF', border: '1px solid #CBD5E1', borderRadius: '3px' }} />
+                                  <input type="number" placeholder="Port" value={sbMysqlCreds.port} onChange={e => setSbMysqlCreds({ ...sbMysqlCreds, port: Number(e.target.value) })} style={{ width: '100%', fontSize: '10px', padding: '2px', color: '#1E293B', backgroundColor: '#FFFFFF', border: '1px solid #CBD5E1', borderRadius: '3px' }} />
+                                  <input type="text" placeholder="User" value={sbMysqlCreds.user} onChange={e => setSbMysqlCreds({ ...sbMysqlCreds, user: e.target.value })} style={{ width: '100%', fontSize: '10px', padding: '2px', color: '#1E293B', backgroundColor: '#FFFFFF', border: '1px solid #CBD5E1', borderRadius: '3px' }} />
+                                  <input type="password" placeholder="Pass" value={sbMysqlCreds.password} onChange={e => setSbMysqlCreds({ ...sbMysqlCreds, password: e.target.value })} style={{ width: '100%', fontSize: '10px', padding: '2px', color: '#1E293B', backgroundColor: '#FFFFFF', border: '1px solid #CBD5E1', borderRadius: '3px' }} />
                                 </>
                               ) : (
                                 <>
-                                  <input type="text" placeholder="Account ID" value={sbSnowflakeCreds.account} onChange={e => setSbSnowflakeCreds({ ...sbSnowflakeCreds, account: e.target.value })} style={{ width: '100%', fontSize: '10px', padding: '2px' }} />
-                                  <input type="text" placeholder="User" value={sbSnowflakeCreds.user} onChange={e => setSbSnowflakeCreds({ ...sbSnowflakeCreds, user: e.target.value })} style={{ width: '100%', fontSize: '10px', padding: '2px' }} />
-                                  <input type="password" placeholder="Pass" value={sbSnowflakeCreds.password} onChange={e => setSbSnowflakeCreds({ ...sbSnowflakeCreds, password: e.target.value })} style={{ width: '100%', fontSize: '10px', padding: '2px' }} />
+                                  <input type="text" placeholder="Account ID" value={sbSnowflakeCreds.account} onChange={e => setSbSnowflakeCreds({ ...sbSnowflakeCreds, account: e.target.value })} style={{ width: '100%', fontSize: '10px', padding: '2px', color: '#1E293B', backgroundColor: '#FFFFFF', border: '1px solid #CBD5E1', borderRadius: '3px' }} />
+                                  <input type="text" placeholder="User" value={sbSnowflakeCreds.user} onChange={e => setSbSnowflakeCreds({ ...sbSnowflakeCreds, user: e.target.value })} style={{ width: '100%', fontSize: '10px', padding: '2px', color: '#1E293B', backgroundColor: '#FFFFFF', border: '1px solid #CBD5E1', borderRadius: '3px' }} />
+                                  <input type="password" placeholder="Pass" value={sbSnowflakeCreds.password} onChange={e => setSbSnowflakeCreds({ ...sbSnowflakeCreds, password: e.target.value })} style={{ width: '100%', fontSize: '10px', padding: '2px', color: '#1E293B', backgroundColor: '#FFFFFF', border: '1px solid #CBD5E1', borderRadius: '3px' }} />
                                 </>
                               )}
                               <button onClick={() => handleConnectDb(true)} style={{ width: '100%', fontSize: '9.5px', background: '#4F46E5', color: '#FFF', border: 'none', borderRadius: '3px', padding: '3px', fontWeight: 'bold', cursor: 'pointer' }}>
@@ -967,13 +1032,13 @@ export default function App() {
                             </div>
                           ) : sbDbConnected ? (
                             <div className="space-y-1">
-                              <select value={sbSelectedDb} onChange={e => handleSelectDb(e.target.value, true)} style={{ width: '100%', fontSize: '10px', padding: '2px', border: '1px solid #CBD5E1', borderRadius: '3px' }}>
+                              <select value={sbSelectedDb} onChange={e => handleSelectDb(e.target.value, true)} style={{ width: '100%', fontSize: '10px', padding: '2px', border: '1px solid #CBD5E1', borderRadius: '3px', color: '#1E293B', backgroundColor: '#FFFFFF' }}>
                                 <option value="">Select DB</option>
                                 {sbDbList.map(db => <option key={db} value={db}>{db}</option>)}
                               </select>
 
                               {sbDbPlatform === 'Snowflake' && sbSelectedDb && (
-                                <select value={sbSelectedSchema} onChange={e => handleSelectSchema(e.target.value, true)} disabled={sbLoadingSchemas} style={{ width: '100%', fontSize: '10px', padding: '2px', border: '1px solid #CBD5E1', borderRadius: '3px' }}>
+                                <select value={sbSelectedSchema} onChange={e => handleSelectSchema(e.target.value, true)} disabled={sbLoadingSchemas} style={{ width: '100%', fontSize: '10px', padding: '2px', border: '1px solid #CBD5E1', borderRadius: '3px', color: '#1E293B', backgroundColor: '#FFFFFF' }}>
                                   <option value="">{sbLoadingSchemas ? "Loading..." : "Select Schema"}</option>
                                   {sbSchemaList.map(sch => <option key={sch} value={sch}>{sch}</option>)}
                                 </select>
@@ -993,7 +1058,7 @@ export default function App() {
                     <div className="border-t pt-1" style={{ borderColor: '#E2E8F0' }}>
                       <div
                         onClick={() => setIsSidebarUrlOpen(!isSidebarUrlOpen)}
-                        className="flex justify-between items-center cursor-pointer py-1 px-1 bg-slate-100 rounded text-[9.5px] font-bold text-slate-700"
+                        className="flex justify-between items-center cursor-pointer py-1 px-1 bg-slate-100 rounded text-[10px] font-bold text-slate-700"
                       >
                         <span>🔗 Fetch URL</span>
                         <span>{isSidebarUrlOpen ? '▲' : '▼'}</span>
@@ -1001,7 +1066,7 @@ export default function App() {
 
                       {isSidebarUrlOpen && (
                         <div className="space-y-1 mt-1 p-1 border rounded bg-slate-50 border-slate-200">
-                          <input type="text" placeholder="Paste link..." value={sbUrlInput} onChange={e => setSbUrlInput(e.target.value)} style={{ width: '100%', fontSize: '10px', padding: '2px', border: '1px solid #CBD5E1', borderRadius: '3px' }} />
+                          <input type="text" placeholder="Paste link..." value={sbUrlInput} onChange={e => setSbUrlInput(e.target.value)} style={{ width: '100%', fontSize: '10px', padding: '2px', border: '1px solid #CBD5E1', borderRadius: '3px', color: '#1E293B', backgroundColor: '#FFFFFF' }} />
                           <button onClick={() => processUrlFetch(sbUrlInput)} disabled={!sbUrlInput} style={{ width: '100%', fontSize: '9.5px', background: '#06B6D4', color: '#FFF', border: 'none', borderRadius: '3px', padding: '3px', fontWeight: 'bold', cursor: 'pointer' }}>
                             Fetch Link
                           </button>
@@ -1047,23 +1112,9 @@ export default function App() {
         )}
 
         {/* 🚀 RIGHT MAIN CONTENT PANEL */}
-        <main className={`flex-1 flex flex-col h-full overflow-hidden p-3 ${isFullScreenTable ? 'bg-white absolute inset-0 z-50' : ''}`} style={{
-          background: 'linear-gradient(180deg,#F8FAFC,#EEF2FF)'
+        <main className={`flex-1 flex flex-col h-full overflow-hidden p-0 ${isFullScreenTable ? 'bg-white absolute inset-0 z-50' : ''}`} style={{
+          background: '#DFF4FF'
         }}>
-
-          {!isFullScreenTable && !isSidebarOpen && (
-            <div className="flex items-center pb-2 flex-shrink-0">
-              <IconButton
-                size="small"
-                onClick={() => setIsSidebarOpen(true)}
-                title="Open Sidebar"
-                className="p-1 rounded bg-white shadow border border-slate-300"
-                style={{ color: '#1E293B' }}
-              >
-                <MenuIcon style={{ fontSize: 18 }} />
-              </IconButton>
-            </div>
-          )}
 
           {isFullScreenTable && (
             <div className="flex justify-between items-center p-2 rounded-none flex-shrink-0 border-b" style={{ backgroundColor: '#7D92A3', borderColor: '#CBD5E1', color: '#1E293B' }}>
@@ -1078,41 +1129,51 @@ export default function App() {
 
           {!activeDataset ? (
             <div
-              className="mx-auto w-full space-y-1.5 overflow-y-auto flex flex-col justify-start"
+              className="mx-auto w-full overflow-y-auto flex flex-col dashboard-container"
               style={{
-                maxWidth: '1200px',
-                padding: '1.5px 12px 8px 12px',
-                minHeight: '100%'
+                padding: '0px 12px 0px 12px',
+                minHeight: '100%',
+                backgroundColor: '#DFF4FF'
               }}
             >
-              <Typography
-                variant="subtitle2"
-                className="tracking-wider text-center"
-                style={{ color: '#1E293B', marginTop: '1.5px', marginBottom: '8px', fontSize: '14px', fontWeight: 900 }}
-              >
-                ⚡ Quick Data Ingestion Hub
-              </Typography>
+              {/* Quick Data Ingestion Hub Title */}
+              <div className="title-container">
+                <Typography
+                  className="page-title"
+                  sx={{
+                    width: "100%",
+                    textAlign: "center",
+                    fontSize: "16px",
+                    fontWeight: 800,
+                    marginTop: "20px",
+                    marginBottom: " 20px",
+                    color: "#000000"
+                  }}
+                >
+                  ✨ Quick Data Ingestion Hub
+                </Typography>
+              </div>
 
-              {/* 3-COLUMN RESPONSIVE GRID LAYOUT (Unified "Import Files" Card with Stacked Layout) */}
+              {/* 3-COLUMN CENTERED COMPACT GRID LAYOUT */}
               <div style={{
                 display: 'grid',
-                gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
-                gap: '16px',
-                alignItems: 'start',
-                justifyContent: 'center'
+                gridTemplateColumns: 'repeat(3, 340px)',
+                justifyContent: 'center',
+                gap: '24px',
+                width: '100%'
               }}>
 
                 {/* 1. UNIFIED "Import Files" Card (Stacked Vertical Design) */}
-                <div style={{ padding: '14px', background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.02)', maxWidth: '340px', width: '100%', margin: '0 auto' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', marginBottom: '4px' }}>
-                    <div style={{ width: '30px', height: '30px', borderRadius: '8px', background: '#EDE9FE', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#8B5CF6', marginRight: '8px' }}>
-                      <FolderOpenIcon sx={{ fontSize: 16 }} />
+                <div style={{ padding: '22px', background: '#FFFFFF', border: '1px solid #080808', borderRadius: '16px', boxShadow: '0 20px 24px rgba(15,23,42,0.12)', width: '340px', height: '380px', margin: '0 auto', display: 'flex', flexDirection: 'column', overflowY: 'auto' }}>
+                  <div style={{ marginBottom: '10px', display: 'flex', alignItems: 'center' }}>
+                    <div style={{ width: '36px', height: '36px', borderRadius: '10px', background: '#EDE9FE', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#8B5CF6', marginRight: '10px' }}>
+                      <FolderOpenIcon sx={{ fontSize: 20 }} />
                     </div>
                     <div>
-                      <div style={{ fontSize: '13px', fontWeight: '800', color: '#1E293B' }}>
+                      <div style={{ fontSize: '16px', fontWeight: '700', color: '#1E293B' }}>
                         Import Files
                       </div>
-                      <div style={{ fontSize: '9.5px', color: '#64748B' }}>
+                      <div style={{ fontSize: '11px', color: '#64748B' }}>
                         Browse local files or enter a direct URL path
                       </div>
                     </div>
@@ -1124,19 +1185,19 @@ export default function App() {
                     onDragLeave={handleDragLeave}
                     onDrop={handleDrop}
                     style={{ 
-                      marginTop: '8px',
-                      padding: '12px 6px', 
-                      borderRadius: '8px', 
-                      background: isDragging ? '#F3E8FF' : '#F8FAFC', 
-                      border: isDragging ? '2px dashed #8B5CF6' : '1px dashed #CBD5E1', 
+                      marginTop: '4px',
+                      padding: '12px 8px', 
+                      borderRadius: '10px', 
+                      background: isDragging ? '#F3E8FF' : '#FAFBFF', 
+                      border: isDragging ? '2px dashed #8B5CF6' : '1.5px dashed #C4B5FD', 
                       textAlign: 'center',
                       transition: 'all 0.2s ease'
                     }}
                   >
                     <div style={{ marginBottom: '2px' }}>
-                      <CloudUploadIcon sx={{ fontSize: 22, color: "#8B5CF6" }} />
+                      <CloudUploadIcon sx={{ fontSize: 20, color: "#8B5CF6" }} />
                     </div>
-                    <Typography sx={{ fontSize: '10px', fontWeight: 700, color: "#1E293B" }}>
+                    <Typography sx={{ fontSize: '12px', fontWeight: 700, color: "#1E293B" }}>
                       Drag & Drop Files Here
                     </Typography>
                     <Button
@@ -1146,66 +1207,67 @@ export default function App() {
                         mt: 1,
                         borderRadius: "6px",
                         textTransform: "none",
-                        fontSize: "9.5px",
-                        py: 0.2,
-                        px: 1.2,
-                        background: "linear-gradient(135deg,#8B5CF6,#6D28D9)"
+                        fontSize: "11px",
+                        fontWeight: 700,
+                        py: 0.3,
+                        px: 1.5,
+                        background: "linear-gradient(135deg,#8B5CF6,#6D28D9)",
+                        boxShadow: '0 3px 8px rgba(109,40,217,0.2)'
                       }}
                     >
-                      Browse Device
+                      Upload Files
                       <input hidden multiple type="file" onChange={handleFileUpload} />
                     </Button>
                   </div>
 
                   <Divider sx={{ my: 1.5 }}>
-                    <span style={{ fontSize: '9px', fontWeight: 700, color: '#94A3B8', textTransform: 'uppercase' }}>OR</span>
+                    <span style={{ fontSize: '9.5px', fontWeight: 700, color: '#94A3B8', textTransform: 'uppercase' }}>OR DIRECT URL</span>
                   </Divider>
 
-                  {/* Bottom Section: Direct URL Input */}
+                  {/* Bottom Section: Direct URL Input (Supports Web URLs & Local Paths) */}
                   <div className="space-y-1">
-                    <Typography sx={{ fontSize: '10px', fontWeight: 700, color: '#1E293B', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                      <LinkIcon sx={{ fontSize: 13, color: '#16A34A' }} /> Direct URL / Copypath
-                    </Typography>
                     <input
                       value={urlInput}
                       onChange={(e) => setUrlInput(e.target.value)}
-                      placeholder="https://example.com/data.csv"
-                      style={{ fontSize: '10px', padding: '5px 8px', width: '100%', borderRadius: '6px', border: '1px solid #CBD5E1', background: '#FFF' }}
+                      placeholder="https://example.com/sample.csv or C:\path\file.csv"
+                      style={{ fontSize: '11px', padding: '8px 10px', width: '100%', borderRadius: '8px', border: '1px solid #CBD5E1', backgroundColor: '#FFFFFF', color: '#1E293B' }}
                     />
                     <button
-                      style={{ marginTop: '6px', fontSize: '10px', width: '100%', background: '#16A34A', color: '#fff', border: 'none', borderRadius: '6px', fontWeight: 700, cursor: 'pointer', padding: '5px' }}
+                      style={{ marginTop: '6px', fontSize: '12px', width: '100%', background: 'linear-gradient(135deg,#16A34A,#15803D)', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: 700, cursor: 'pointer', padding: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', boxShadow: '0 3px 8px rgba(22,163,74,0.2)' }}
                       onClick={() => processUrlFetch()}
-                      disabled={!urlInput || loading}
+                      disabled={!urlInput || loadingUrl}
                     >
-                      {loading ? "Fetching URL..." : "Fetch & Ingest URL"}
+                      {loadingUrl ? "Fetching..." : (<><LinkIcon sx={{ fontSize: 14 }} /> Fetch Data</>)}
                     </button>
                   </div>
                 </div>
 
-                {/* 2. Database Card */}
-                <div style={{ padding: '12px', background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.02)', maxWidth: '280px', width: '100%', margin: '0 auto' }}>
-                  <div style={{ marginBottom: '6px' }}>
-                    <div style={{ width: '30px', height: '30px', borderRadius: '8px', background: '#E0F2FE', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#0284C7' }}>
-                      <StorageIcon sx={{ fontSize: 16 }} />
+                {/* 2. Database Card (No card scrolling, expanded green area, Horizontal header, MySQL Port, Snowflake Warehouse) */}
+                <div style={{ padding: '22px', background: '#FFFFFF', border: '1px solid #080808', borderRadius: '16px', boxShadow: '0 4px 14px rgba(15,23,42,0.04)', width: '340px', height: '380px', margin: '0 auto', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+                  <div style={{ marginBottom: '10px', display: 'flex', alignItems: 'center', flexShrink: 0 }}>
+                    <div style={{ width: '36px', height: '36px', borderRadius: '10px', background: '#E0F2FE', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#0284C7', marginRight: '10px' }}>
+                      <StorageIcon sx={{ fontSize: 20 }} />
+                    </div>
+                    <div>
+                      <div style={{ fontSize: '16px', fontWeight: '700', color: '#1E293B' }}>
+                        Database
+                      </div>
+                      <div style={{ fontSize: '11px', color: '#64748B' }}>
+                        Connect to database & import tables
+                      </div>
                     </div>
                   </div>
 
-                  <div style={{ fontSize: '13px', fontWeight: '800', color: '#1E293B' }}>
-                    Database
-                  </div>
-
-                  <div style={{ fontSize: '10.5px', color: '#64748B', marginBottom: '8px' }}>
-                    Connect to database & import tables
-                  </div>
-
-                  <div style={{ marginTop: '4px' }}>
-                    <Typography sx={{ fontWeight: 700, fontSize: '10px', color: '#0f172a', mb: 0.5 }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '2px', flex: 1, minHeight: 0 }}>
+                    <Typography sx={{ fontWeight: 700, fontSize: '12px', color: '#0f172a', mb: 0 }}>
                       Select Provider:
                     </Typography>
-                    <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
+                    <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                       {[
                         { label: 'MySQL', icon: '🐬', val: 'MySQL' },
-                        { label: 'Snowflake', icon: '❄️', val: 'Snowflake' }
+                        { label: 'Snowflake', icon: '❄️', val: 'Snowflake' },
+                        { label: 'PostgreSQL', icon: '🐘', val: 'PostgreSQL' },
+                        { label: 'SQL Server', icon: '🗄️', val: 'SQL Server' }
                       ].map((item) => {
                         const isSelected = dbPlatform === item.val;
                         return (
@@ -1222,90 +1284,152 @@ export default function App() {
                               setSelectedTables([]);
                             }}
                             style={{
-                              fontSize: '9.5px',
-                              padding: '3px 6px',
+                              fontSize: '11px',
+                              padding: '6px 10px',
                               borderRadius: '6px',
-                              border: isSelected ? '1px solid #0284C7' : '1px solid #CBD5E1',
+                              border: isSelected ? '1.5px solid #0284C7' : '1px solid #E2E8F0',
                               background: isSelected ? '#E0F2FE' : '#F8FAFC',
                               color: isSelected ? '#0369A1' : '#334155',
-                              fontWeight: isSelected ? 700 : 500,
+                              fontWeight: isSelected ? 700 : 600,
                               cursor: 'pointer',
                               display: 'flex',
                               alignItems: 'center',
-                              gap: '2px'
+                              gap: '4px'
                             }}
                           >
-                            <span>{item.icon}</span> {item.label}
+                            <span style={{ fontSize: '12px' }}>{item.icon}</span> {item.label}
                           </button>
                         );
                       })}
                     </div>
-                  </div>
 
                   {dbPlatform && (
                     <div
                       style={{
-                        marginTop: '8px',
+                        marginTop: '4px',
                         padding: '8px',
                         background: '#ECFDF5',
                         border: '1px solid #A7F3D0',
                         borderRadius: '10px',
-                        color: '#065F46'
+                        color: '#065F46',
+                        flex: 1,
+                        display: 'flex',
+                        flexDirection: 'column',
+                        minHeight: 0,
+                        overflowY: 'auto'
                       }}
                     >
                       {!dbConnected ? (
                         <>
                           {dbPlatform === "MySQL" ? (
                             <>
-                              <input type="text" placeholder="Host" value={mysqlCreds.host} onChange={(e) => setMysqlCreds({ ...mysqlCreds, host: e.target.value })} style={{ fontSize: '10px', padding: '4px 6px', marginTop: '2px', width: '100%', borderRadius: '6px', border: '1px solid #CBD5E1', background: '#FFF' }} />
-                              <input type="text" placeholder="Username" value={mysqlCreds.user} onChange={(e) => setMysqlCreds({ ...mysqlCreds, user: e.target.value })} style={{ fontSize: '10px', padding: '4px 6px', marginTop: '2px', width: '100%', borderRadius: '6px', border: '1px solid #CBD5E1', background: '#FFF' }} />
-                              <input type="password" placeholder="Password" value={mysqlCreds.password} onChange={(e) => setMysqlCreds({ ...mysqlCreds, password: e.target.value })} style={{ fontSize: '10px', padding: '4px 6px', marginTop: '2px', width: '100%', borderRadius: '6px', border: '1px solid #CBD5E1', background: '#FFF' }} />
+                              <div style={{ fontSize: '11px', fontWeight: 'bold', mb: '2px', color: '#047857' }}>MySQL Credentials</div>
+                              <input
+                                type="text"
+                                placeholder="Host"
+                                value={mysqlCreds.host}
+                                onChange={(e) => setMysqlCreds({ ...mysqlCreds, host: e.target.value })}
+                                style={{ fontSize: '11px', padding: '3px 5px', marginTop: '2px', width: '100%', borderRadius: '4px', border: '1.5px solid #CBD5E1', backgroundColor: '#FFFFFF', color: '#1E293B' }}
+                              />
+                              <input
+                                type="number"
+                                placeholder="Port (e.g. 3306)"
+                                value={mysqlCreds.port}
+                                onChange={(e) => setMysqlCreds({ ...mysqlCreds, port: parseInt(e.target.value) || 3306 })}
+                                style={{ fontSize: '11px', padding: '3px 5px', marginTop: '2px', width: '100%', borderRadius: '4px', border: '1.5px solid #CBD5E1', backgroundColor: '#FFFFFF', color: '#1E293B' }}
+                              />
+                              <input
+                                type="text"
+                                placeholder="Username"
+                                value={mysqlCreds.user}
+                                onChange={(e) => setMysqlCreds({ ...mysqlCreds, user: e.target.value })}
+                                style={{ fontSize: '11px', padding: '3px 5px', marginTop: '2px', width: '100%', borderRadius: '4px', border: '1.5px solid #CBD5E1', backgroundColor: '#FFFFFF', color: '#1E293B' }}
+                              />
+                              <input
+                                type="password"
+                                placeholder="Password"
+                                value={mysqlCreds.password}
+                                onChange={(e) => setMysqlCreds({ ...mysqlCreds, password: e.target.value })}
+                                style={{ fontSize: '11px', padding: '3px 5px', marginTop: '2px', width: '100%', borderRadius: '4px', border: '1.5px solid #CBD5E1', backgroundColor: '#FFFFFF', color: '#1E293B' }}
+                              />
+                            </>
+                          ) : dbPlatform === "Snowflake" ? (
+                            <>
+                              <div style={{ fontSize: '11px', fontWeight: 'bold', mb: '2px', color: '#047857' }}>Snowflake Credentials</div>
+                              <input
+                                type="text"
+                                placeholder="Account ID"
+                                value={snowflakeCreds.account}
+                                onChange={(e) => setSnowflakeCreds({ ...snowflakeCreds, account: e.target.value })}
+                                style={{ fontSize: '11px', padding: '3px 5px', marginTop: '2px', width: '100%', borderRadius: '4px', border: '1.5px solid #CBD5E1', backgroundColor: '#FFFFFF', color: '#1E293B' }}
+                              />
+                              <input
+                                type="text"
+                                placeholder="Username"
+                                value={snowflakeCreds.user}
+                                onChange={(e) => setSnowflakeCreds({ ...snowflakeCreds, user: e.target.value })}
+                                style={{ fontSize: '11px', padding: '3px 5px', marginTop: '2px', width: '100%', borderRadius: '4px', border: '1.5px solid #CBD5E1', backgroundColor: '#FFFFFF', color: '#1E293B' }}
+                              />
+                              <input
+                                type="password"
+                                placeholder="Password"
+                                value={snowflakeCreds.password}
+                                onChange={(e) => setSnowflakeCreds({ ...snowflakeCreds, password: e.target.value })}
+                                style={{ fontSize: '11px', padding: '3px 5px', marginTop: '2px', width: '100%', borderRadius: '4px', border: '1.5px solid #CBD5E1', backgroundColor: '#FFFFFF', color: '#1E293B' }}
+                              />
+                              <input
+                                type="text"
+                                placeholder="Warehouse (COMPUTE_WH)"
+                                value={snowflakeCreds.warehouse}
+                                onChange={(e) => setSnowflakeCreds({ ...snowflakeCreds, warehouse: e.target.value })}
+                                style={{ fontSize: '11px', padding: '3px 5px', marginTop: '2px', width: '100%', borderRadius: '4px', border: '1.5px solid #CBD5E1', backgroundColor: '#FFFFFF', color: '#1E293B' }}
+                              />
                             </>
                           ) : (
-                            <>
-                              <input type="text" placeholder="Account ID" value={snowflakeCreds.account} onChange={(e) => setSnowflakeCreds({ ...snowflakeCreds, account: e.target.value })} style={{ fontSize: '10px', padding: '4px 6px', marginTop: '2px', width: '100%', borderRadius: '6px', border: '1px solid #CBD5E1', background: '#FFF' }} />
-                              <input type="text" placeholder="Username" value={snowflakeCreds.user} onChange={(e) => setSnowflakeCreds({ ...snowflakeCreds, user: e.target.value })} style={{ fontSize: '10px', padding: '4px 6px', marginTop: '2px', width: '100%', borderRadius: '6px', border: '1px solid #CBD5E1', background: '#FFF' }} />
-                              <input type="password" placeholder="Password" value={snowflakeCreds.password} onChange={(e) => setSnowflakeCreds({ ...snowflakeCreds, password: e.target.value })} style={{ fontSize: '10px', padding: '4px 6px', marginTop: '2px', width: '100%', borderRadius: '6px', border: '1px solid #CBD5E1', background: '#FFF' }} />
-                            </>
+                            <div style={{ fontSize: '11px', padding: '6px', textAlign: 'center', color: '#047857', fontStyle: 'italic' }}>
+                              {dbPlatform} connection settings will appear here.
+                            </div>
                           )}
 
-                          <button
-                            style={{ marginTop: '8px', fontSize: '10px', width: '100%', background: '#0284C7', color: '#fff', border: 'none', borderRadius: '6px', fontWeight: 700, cursor: 'pointer', padding: '5px' }}
-                            onClick={() => handleConnectDb()}
-                          >
-                            Connect Database
-                          </button>
+                          {(dbPlatform === "MySQL" || dbPlatform === "Snowflake") && (
+                            <button
+                              style={{ marginTop: '6px', fontSize: '11px', width: '100%', background: '#0284C7', color: '#fff', border: 'none', borderRadius: '4px', fontWeight: 700, cursor: 'pointer', padding: '5px' }}
+                              onClick={() => handleConnectDb()}
+                            >
+                              <StorageIcon sx={{ fontSize: 11, mr: 0.5, verticalAlign: 'middle' }} /> Connect Database
+                            </button>
+                          )}
                         </>
                       ) : (
                         <>
-                          <FormControl fullWidth size="small" sx={{ mt: 0.5, background: '#F8FAFC', borderRadius: '6px' }}>
-                            <InputLabel sx={{ fontSize: '10px' }}>Database</InputLabel>
-                            <Select value={selectedDb} label="Database" onChange={(e) => handleSelectDb(e.target.value)} sx={{ fontSize: '10px', height: '26px' }}>
-                              {dbList.map((db) => <MenuItem key={db} value={db} sx={{ fontSize: '10px' }}>{db}</MenuItem>)}
+                          <FormControl fullWidth size="small" sx={{ mt: 0.5, background: '#F8FAFC', borderRadius: '4px' }}>
+                            <InputLabel sx={{ fontSize: '11px' }}>Database</InputLabel>
+                            <Select value={selectedDb} label="Database" onChange={(e) => handleSelectDb(e.target.value)} sx={{ fontSize: '11px', height: '24px' }}>
+                              {dbList.map((db) => <MenuItem key={db} value={db} sx={{ fontSize: '11px' }}>{db}</MenuItem>)}
                             </Select>
                           </FormControl>
 
                           {dbPlatform === 'Snowflake' && selectedDb && (
-                            <FormControl fullWidth size="small" sx={{ mt: 0.8, background: '#F8FAFC', borderRadius: '6px' }}>
-                              <InputLabel sx={{ fontSize: '10px' }}>Schema</InputLabel>
-                              <Select value={selectedSchema} label="Schema" disabled={loadingSchemas} onChange={(e) => handleSelectSchema(e.target.value)} sx={{ fontSize: '10px', height: '26px' }}>
+                            <FormControl fullWidth size="small" sx={{ mt: 0.6, background: '#F8FAFC', borderRadius: '4px' }}>
+                              <InputLabel sx={{ fontSize: '11px' }}>Schema</InputLabel>
+                              <Select value={selectedSchema} label="Schema" disabled={loadingSchemas} onChange={(e) => handleSelectSchema(e.target.value)} sx={{ fontSize: '11px', height: '24px' }}>
                                 <MenuItem value=""><em>{loadingSchemas ? "Loading..." : "Select Schema"}</em></MenuItem>
-                                {schemaList.map((sch) => <MenuItem key={sch} value={sch} sx={{ fontSize: '10px' }}>{sch}</MenuItem>)}
+                                {schemaList.map((sch) => <MenuItem key={sch} value={sch} sx={{ fontSize: '11px' }}>{sch}</MenuItem>)}
                               </Select>
                             </FormControl>
                           )}
 
                           {tableList.length > 0 && (
-                            <div style={{ marginTop: "6px", maxHeight: "88px", overflowY: "auto", fontSize: "10px", border: '1px solid #A7F3D0', borderRadius: '6px', padding: '4px', background: '#FFFFFF' }}>
-                              <span style={{ fontWeight: 600, fontSize: '9px', color: '#065F46', display: 'block', mb: '2px' }}>Select Tables:</span>
+                            <div style={{ marginTop: "4px", maxHeight: "110px", overflowY: "auto", fontSize: "11px", border: '1px solid #A7F3D0', borderRadius: '4px', padding: '4px', background: '#FFFFFF' }}>
+                              <span style={{ fontWeight: 600, fontSize: '11px', color: '#065F46', display: 'block', mb: '2px' }}>Select Tables:</span>
                               {tableList.map((table) => (
                                 <FormControlLabel
                                   key={table}
-                                  sx={{ display: 'block', m: 0, '& .MuiFormControlLabel-label': { fontSize: '10px' } }}
+                                  sx={{ display: 'block', m: 0, '& .MuiFormControlLabel-label': { fontSize: '11px' } }}
                                   control={
                                     <Checkbox
                                       size="small"
-                                      sx={{ p: 0.2 }}
+                                      sx={{ p: 0.1 }}
                                       checked={selectedTables.includes(table)}
                                       onChange={(e) => {
                                         if (e.target.checked) setSelectedTables([...selectedTables, table]);
@@ -1322,11 +1446,11 @@ export default function App() {
                           {tableList.length > 0 && (
                             <div style={{ marginTop: '6px' }}>
                               <button
-                                style={{ fontSize: '10px', width: '100%', background: '#10B981', color: '#fff', border: 'none', borderRadius: '6px', fontWeight: 700, cursor: 'pointer', padding: '5px' }}
+                                style={{ fontSize: '11px', width: '100%', background: '#10B981', color: '#fff', border: 'none', borderRadius: '4px', fontWeight: 700, cursor: 'pointer', padding: '5px' }}
                                 onClick={() => processDbImport()}
-                                disabled={selectedTables.length === 0}
+                                disabled={selectedTables.length === 0 || loadingImport}
                               >
-                                Import Tables ({selectedTables.length})
+                                {loadingImport ? "Importing..." : `Import Tables (${selectedTables.length})`}
                               </button>
                             </div>
                           )}
@@ -1334,33 +1458,34 @@ export default function App() {
                       )}
                     </div>
                   )}
+                  </div>
                 </div>
 
                 {/* 3. Amazon S3 Card */}
-                <div style={{ padding: '12px', background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.02)', maxWidth: '280px', width: '100%', margin: '0 auto' }}>
-                  <div style={{ marginBottom: '6px' }}>
-                    <div style={{ width: '30px', height: '30px', borderRadius: '8px', background: '#FEF3C7', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#D97706' }}>
-                      <CloudIcon sx={{ fontSize: 16 }} />
+                <div style={{ padding: '22px', background: '#FFFFFF', border: '1px solid #080808', borderRadius: '16px', boxShadow: '0 4px 14px rgba(15,23,42,0.04)', width: '340px', height: '380px', margin: '0 auto', display: 'flex', flexDirection: 'column', overflowY: 'auto' }}>
+                  <div style={{ marginBottom: '14px' }}>
+                    <div style={{ width: '42px', height: '42px', borderRadius: '10px', background: '#FEF3C7', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#D97706', marginBottom: '12px' }}>
+                      <CloudIcon sx={{ fontSize: 22 }} />
+                    </div>
+
+                    <div style={{ fontSize: '18px', fontWeight: '700', color: '#1E293B', marginBottom: '13px' }}>
+                      Amazon S3
+                    </div>
+
+                    <div style={{ fontSize: '13px', color: '#64748B' }}>
+                      Stream raw files from AWS S3 buckets
                     </div>
                   </div>
 
-                  <div style={{ fontSize: '13px', fontWeight: '800', color: '#1E293B' }}>
-                    Amazon S3
-                  </div>
-
-                  <div style={{ fontSize: '10.5px', color: '#64748B', marginBottom: '8px' }}>
-                    Stream raw files from AWS S3 buckets
-                  </div>
-
-                  <div className="space-y-1 mt-1">
-                    <input type="text" placeholder="Bucket Name" value={s3Creds.bucket} onChange={e => setS3Creds({ ...s3Creds, bucket: e.target.value })} style={{ width: '100%', fontSize: '10px', padding: '4px', borderRadius: '4px', border: '1px solid #CBD5E1', background: '#FFF' }} />
-                    <input type="text" placeholder="Object Key (path/file.csv)" value={s3Creds.key} onChange={e => setS3Creds({ ...s3Creds, key: e.target.value })} style={{ width: '100%', fontSize: '10px', padding: '4px', borderRadius: '4px', border: '1px solid #CBD5E1', background: '#FFF' }} />
-                    <input type="text" placeholder="Region (us-east-1)" value={s3Creds.region} onChange={e => setS3Creds({ ...s3Creds, region: e.target.value })} style={{ width: '100%', fontSize: '10px', padding: '4px', borderRadius: '4px', border: '1px solid #CBD5E1', background: '#FFF' }} />
-                    <input type="password" placeholder="Access Key ID (opt)" value={s3Creds.accessKeyId} onChange={e => setS3Creds({ ...s3Creds, accessKeyId: e.target.value })} style={{ width: '100%', fontSize: '10px', padding: '4px', borderRadius: '4px', border: '1px solid #CBD5E1', background: '#FFF' }} />
-                    <input type="password" placeholder="Secret Key (opt)" value={s3Creds.secretAccessKey} onChange={e => setS3Creds({ ...s3Creds, secretAccessKey: e.target.value })} style={{ width: '100%', fontSize: '10px', padding: '4px', borderRadius: '4px', border: '1px solid #CBD5E1', background: '#FFF' }} />
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '2px' }}>
+                    <input type="text" placeholder="Bucket Name" value={s3Creds.bucket} onChange={e => setS3Creds({ ...s3Creds, bucket: e.target.value })} style={{ width: '100%', fontSize: '12px', padding: '7px 10px', borderRadius: '8px', border: '1px solid #CBD5E1', backgroundColor: '#FFFFFF', color: '#1E293B' }} />
+                    <input type="text" placeholder="Object Key (path/file.csv)" value={s3Creds.key} onChange={e => setS3Creds({ ...s3Creds, key: e.target.value })} style={{ width: '100%', fontSize: '12px', padding: '7px 10px', borderRadius: '8px', border: '1px solid #CBD5E1', backgroundColor: '#FFFFFF', color: '#1E293B' }} />
+                    <input type="text" placeholder="Region (us-east-1)" value={s3Creds.region} onChange={e => setS3Creds({ ...s3Creds, region: e.target.value })} style={{ width: '100%', fontSize: '12px', padding: '7px 10px', borderRadius: '8px', border: '1px solid #CBD5E1', backgroundColor: '#FFFFFF', color: '#1E293B' }} />
+                    <input type="password" placeholder="Access Key ID (opt)" value={s3Creds.accessKeyId} onChange={e => setS3Creds({ ...s3Creds, accessKeyId: e.target.value })} style={{ width: '100%', fontSize: '12px', padding: '7px 10px', borderRadius: '8px', border: '1px solid #CBD5E1', backgroundColor: '#FFFFFF', color: '#1E293B' }} />
+                    <input type="password" placeholder="Secret Key (opt)" value={s3Creds.secretAccessKey} onChange={e => setS3Creds({ ...s3Creds, secretAccessKey: e.target.value })} style={{ width: '100%', fontSize: '12px', padding: '7px 10px', borderRadius: '8px', border: '1px solid #CBD5E1', backgroundColor: '#FFFFFF', color: '#1E293B' }} />
 
                     <button
-                      style={{ marginTop: '8px', fontSize: '10.5px', width: '100%', background: '#D97706', color: '#fff', border: 'none', borderRadius: '6px', fontWeight: 700, cursor: 'pointer', padding: '6px' }}
+                      style={{ marginTop: '6px', fontSize: '13px', width: '100%', background: 'linear-gradient(135deg,#D97706,#B45309)', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: 700, cursor: 'pointer', padding: '10px', boxShadow: '0 3px 8px rgba(217,119,6,0.25)' }}
                       onClick={() => processS3Fetch()}
                       disabled={!s3Creds.bucket || !s3Creds.key || loading}
                     >
@@ -1377,7 +1502,7 @@ export default function App() {
             <div className="flex-1 flex flex-col min-h-0 overflow-hidden space-y-1">
               {loading && <CircularProgress size={18} className="block mx-auto my-0.5" />}
 
-              <div className="flex-1 min-h-0 overflow-hidden border rounded mt-1" style={{ backgroundColor: '#E3EBFA', borderColor: '#CBD5E1' }}>
+              <div className="flex-1 min-h-0 overflow-hidden border rounded" style={{ backgroundColor: '#DFF4FF', borderColor: '#CBD5E1' }}>
                 <DataPreviewTable
                   columns={columns}
                   data={data}
@@ -1409,7 +1534,7 @@ export default function App() {
           <DialogContentText className="text-[11px]" style={{ color: '#1E293B' }}>
             The dataset <strong>"{duplicateModal.existingName}"</strong> already exists in your saved workspace.
             <br /><br />
-            Do you want to upload/fetch the file at any cost? It will be saved as <strong>"{generateVersionedName(duplicateModal.existingName)}"</strong>.
+            Do you want to upload the file at any cost? It will be saved as <strong>"{generateVersionedName(duplicateModal.existingName)}"</strong>.
           </DialogContentText>
         </DialogContent>
         <DialogActions className="p-2 pt-0">
@@ -1422,67 +1547,32 @@ export default function App() {
         </DialogActions>
       </Dialog>
 
-      {/* Home Confirmation Dialog */}
-      <Dialog open={homeModalOpen} onClose={handleHomeDisagree} maxWidth="xs" fullWidth>
+      {/* Home / Workspace Leave Confirmation Dialog */}
+      <Dialog
+        open={homeModalOpen}
+        onClose={handleHomeDisagree}
+        maxWidth="xs"
+        fullWidth
+      >
         <DialogTitle className="flex items-center font-bold text-xs" style={{ color: '#4F46E5' }}>
           <WarningAmberIcon className="mr-1" fontSize="small" /> Leave Workspace?
         </DialogTitle>
         <DialogContent>
           <DialogContentText className="text-[11px]" style={{ color: '#1E293B' }}>
-            You are leaving the Workspace. All saved workspaces and cached credentials will be reset. Do you agree or Disagree?
+            You are leaving the Workspace. If you leave, the configurations will be reset automatically. Do you agree or Disagree?
           </DialogContentText>
         </DialogContent>
         <DialogActions className="p-2">
-          <Button onClick={handleHomeDisagree} color="inherit" className="text-[10px]" style={{ color: '#64748B' }}>Disagree</Button>
-          <Button onClick={handleHomeAgree} variant="contained" className="font-bold text-[10px]" style={{ backgroundColor: '#4F46E5', color: '#FFFFFF', boxShadow: 'none' }}>Agree</Button>
-        </DialogActions>
-      </Dialog>
-
-      {/* AWS Credentials Verification Dialog */}
-      <Dialog open={awsConfirmDialog} onClose={() => setAwsConfirmDialog(false)} maxWidth="xs" fullWidth>
-        <DialogTitle className="flex items-center font-bold text-xs" style={{ color: '#D97706' }}>
-          <WarningAmberIcon className="mr-1" fontSize="small" /> Verify AWS Credentials
-        </DialogTitle>
-        <DialogContent className="space-y-2 pt-1">
-          <DialogContentText className="text-[11px]" style={{ color: '#1E293B' }}>
-            We detected previous AWS login credentials in your session. Do you want to use the previously logged-in account, or enter new credentials?
-          </DialogContentText>
-          <div className="p-2 bg-slate-50 border rounded text-[10px]">
-            <div><strong>Cached Access Key ID:</strong> {s3ExportCreds.accessKeyId ? `${s3ExportCreds.accessKeyId.substring(0, 4)}••••••••` : 'None'}</div>
-          </div>
-        </DialogContent>
-        <DialogActions className="p-2">
-          <Button 
-            onClick={() => {
-              setAwsConfirmDialog(false);
-              setS3ExportCreds(prev => ({ ...prev, accessKeyId: '', secretAccessKey: '' }));
-              setAwsLoggedIn(false);
-              setDownloadModalOpen(true);
-            }} 
-            color="inherit" 
-            className="text-[10px]" 
-            style={{ color: '#64748B' }}
-          >
-            Enter New Account
+          <Button onClick={handleHomeDisagree} color="inherit" className="text-[10px]" style={{ color: '#64748B' }}>
+            Disagree
           </Button>
-          <Button 
-            onClick={async () => {
-              setAwsConfirmDialog(false);
-              setDownloadModalOpen(true);
-              if (s3ExportCreds.accessKeyId && s3ExportCreds.secretAccessKey) {
-                await handleFetchAwsBuckets();
-              }
-            }} 
-            variant="contained" 
-            className="font-bold text-[10px]" 
-            style={{ backgroundColor: '#D97706', color: '#FFFFFF', boxShadow: 'none' }}
-          >
-            Use Previous Account
+          <Button onClick={handleHomeAgree} variant="contained" className="font-bold text-[10px]" style={{ backgroundColor: '#4F46E5', color: '#FFFFFF', boxShadow: 'none' }}>
+            Agree
           </Button>
         </DialogActions>
       </Dialog>
 
-      {/* Advanced Multi-Option Extraction / Download Dialog */}
+      {/* Multi-Option Export / Download Dialog (Restored with Local ZIP, Snowflake, and AWS S3 extraction targets) */}
       <Dialog
         open={downloadModalOpen}
         onClose={() => setDownloadModalOpen(false)}
@@ -1606,7 +1696,6 @@ export default function App() {
 
           {extractionTarget === 'aws' && (
             <div className="space-y-2 p-2 border rounded bg-slate-50 border-slate-200 text-[10px]">
-              {/* Option Mode selection if AWS session exists */}
               {s3ExportCreds.accessKeyId ? (
                 <div className="space-y-2 pb-2 border-b border-slate-200">
                   <span className="font-bold text-slate-700 block">AWS Account Selection:</span>
@@ -1647,8 +1736,8 @@ export default function App() {
               {(!awsLoggedIn || awsAccountMode === 'different') ? (
                 <div className="space-y-1.5 pt-1">
                   <span className="font-bold text-amber-700 block">🔒 Sign in to AWS S3 Account:</span>
-                  <input type="text" placeholder="AWS Access Key ID" value={s3ExportCreds.accessKeyId} onChange={e => setS3ExportCreds({ ...s3ExportCreds, accessKeyId: e.target.value })} style={{ width: '100%', fontSize: '10px', padding: '4px', borderRadius: '4px', border: '1px solid #CBD5E1' }} />
-                  <input type="password" placeholder="AWS Secret Access Key" value={s3ExportCreds.secretAccessKey} onChange={e => setS3ExportCreds({ ...s3ExportCreds, secretAccessKey: e.target.value })} style={{ width: '100%', fontSize: '10px', padding: '4px', borderRadius: '4px', border: '1px solid #CBD5E1' }} />
+                  <input type="text" placeholder="AWS Access Key ID" value={s3ExportCreds.accessKeyId} onChange={e => setS3ExportCreds({ ...s3ExportCreds, accessKeyId: e.target.value })} style={{ width: '100%', fontSize: '10px', padding: '4px', borderRadius: '4px', border: '1px solid #CBD5E1', backgroundColor: '#FFFFFF', color: '#1E293B' }} />
+                  <input type="password" placeholder="AWS Secret Access Key" value={s3ExportCreds.secretAccessKey} onChange={e => setS3ExportCreds({ ...s3ExportCreds, secretAccessKey: e.target.value })} style={{ width: '100%', fontSize: '10px', padding: '4px', borderRadius: '4px', border: '1px solid #CBD5E1', backgroundColor: '#FFFFFF', color: '#1E293B' }} />
                   <button onClick={() => handleFetchAwsBuckets()} disabled={loadingAwsBuckets} style={{ width: '100%', padding: '5px', background: '#D97706', color: '#FFF', fontWeight: 'bold', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>
                     {loadingAwsBuckets ? "Connecting to AWS..." : "Login & Load Buckets"}
                   </button>
@@ -1658,7 +1747,7 @@ export default function App() {
                   <span className="font-bold text-emerald-700 block">✅ Connected to AWS S3</span>
                   <div>
                     <label className="font-semibold block mb-0.5 text-slate-600">Select S3 Bucket:</label>
-                    <select value={selectedAwsBucket} onChange={e => handleSelectAwsBucket(e.target.value)} style={{ width: '100%', fontSize: '10px', padding: '4px', borderRadius: '4px', border: '1px solid #CBD5E1', background: '#FFF' }}>
+                    <select value={selectedAwsBucket} onChange={e => handleSelectAwsBucket(e.target.value)} style={{ width: '100%', fontSize: '10px', padding: '4px', borderRadius: '4px', border: '1px solid #CBD5E1', backgroundColor: '#FFFFFF', color: '#1E293B' }}>
                       <option value="">-- Choose S3 Bucket --</option>
                       {awsBuckets.map(b => <option key={b} value={b}>{b}</option>)}
                     </select>
@@ -1666,7 +1755,7 @@ export default function App() {
                   {selectedAwsBucket && (
                     <div className="space-y-1 pt-1">
                       <label className="font-semibold block mb-0.5 text-slate-600">Select Existing Folder or Create New:</label>
-                      <select value={selectedAwsFolder} onChange={e => setSelectedAwsFolder(e.target.value)} style={{ width: '100%', fontSize: '10px', padding: '4px', borderRadius: '4px', border: '1px solid #CBD5E1', background: '#FFF' }}>
+                      <select value={selectedAwsFolder} onChange={e => setSelectedAwsFolder(e.target.value)} style={{ width: '100%', fontSize: '10px', padding: '4px', borderRadius: '4px', border: '1px solid #CBD5E1', backgroundColor: '#FFFFFF', color: '#1E293B' }}>
                         <option value="(Root)">📁 (Root / No folder)</option>
                         <option value="new_custom">➕ Type New Folder Name...</option>
                         {awsFolders.map(f => <option key={f} value={f}>📁 {f}</option>)}
@@ -1678,7 +1767,7 @@ export default function App() {
                           placeholder="Enter new folder name (e.g., production_db)" 
                           value={customFolderInput} 
                           onChange={e => setCustomFolderInput(e.target.value)} 
-                          style={{ width: '100%', fontSize: '10px', padding: '4px', borderRadius: '4px', border: '1px solid #CBD5E1', marginTop: '4px', background: '#FFF' }} 
+                          style={{ width: '100%', fontSize: '10px', padding: '4px', borderRadius: '4px', border: '1px solid #CBD5E1', marginTop: '4px', backgroundColor: '#FFFFFF', color: '#1E293B' }} 
                         />
                       )}
                     </div>
