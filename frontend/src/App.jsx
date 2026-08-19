@@ -1463,17 +1463,17 @@ export default function App() {
 
                 {/* 3. Amazon S3 Card */}
                 <div style={{ padding: '22px', background: '#FFFFFF', border: '1px solid #080808', borderRadius: '16px', boxShadow: '0 4px 14px rgba(15,23,42,0.04)', width: '340px', height: '380px', margin: '0 auto', display: 'flex', flexDirection: 'column', overflowY: 'auto' }}>
-                  <div style={{ marginBottom: '14px' }}>
-                    <div style={{ width: '42px', height: '42px', borderRadius: '10px', background: '#FEF3C7', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#D97706', marginBottom: '12px' }}>
-                      <CloudIcon sx={{ fontSize: 22 }} />
+                  <div style={{ marginBottom: '14px', display: 'flex', alignItems: 'center' }}>
+                    <div style={{ width: '36px', height: '36px', borderRadius: '10px', background: '#FEF3C7', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#D97706', marginRight: '10px', flexShrink: 0 }}>
+                      <CloudIcon sx={{ fontSize: 20 }} />
                     </div>
-
-                    <div style={{ fontSize: '18px', fontWeight: '700', color: '#1E293B', marginBottom: '13px' }}>
-                      Amazon S3
-                    </div>
-
-                    <div style={{ fontSize: '13px', color: '#64748B' }}>
-                      Stream raw files from AWS S3 buckets
+                    <div>
+                      <div style={{ fontSize: '16px', fontWeight: '700', color: '#1E293B' }}>
+                        Amazon S3
+                      </div>
+                      <div style={{ fontSize: '11px', color: '#64748B' }}>
+                        Stream raw files from AWS S3 buckets
+                      </div>
                     </div>
                   </div>
 
