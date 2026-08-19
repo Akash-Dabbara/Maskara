@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import {
   Button, Typography, CircularProgress, MenuItem, Select,
   FormControl, InputLabel, IconButton, Dialog, DialogTitle,
-  DialogContent, DialogContentText, DialogActions, Checkbox, FormGroup, FormControlLabel
+  DialogContent, DialogContentText, DialogActions, Checkbox, FormGroup, FormControlLabel, Box, Divider
 } from '@mui/material';
 import DeleteIcon from '@mui/icons-material/Delete';
 import CloudUploadIcon from '@mui/icons-material/CloudUpload';
@@ -16,6 +16,7 @@ import FullscreenExitIcon from '@mui/icons-material/FullscreenExit';
 import MenuIcon from '@mui/icons-material/Menu';
 import MenuOpenIcon from '@mui/icons-material/MenuOpen';
 import CloudIcon from '@mui/icons-material/Cloud';
+import FolderOpenIcon from '@mui/icons-material/FolderOpen';
 import axios from 'axios';
 
 import {
@@ -67,8 +68,9 @@ export default function App() {
   const [selectedTables, setSelectedTables] = useState([]);
   const [loadingSchemas, setLoadingSchemas] = useState(false);
 
-  // URL State
+  // Import Files Card State (Stacked Local Upload + Direct URL)
   const [urlInput, setUrlInput] = useState('');
+  const [isDragging, setIsDragging] = useState(false);
 
   // Amazon S3 Ingestion State
   const [s3Creds, setS3Creds] = useState({
@@ -88,6 +90,7 @@ export default function App() {
   const [selectedAwsFolder, setSelectedAwsFolder] = useState('');
   const [customFolderInput, setCustomFolderInput] = useState('');
   const [loadingAwsBuckets, setLoadingAwsBuckets] = useState(false);
+  const [awsConfirmDialog, setAwsConfirmDialog] = useState(false);
 
   // Amazon S3 Export State in Download Modal
   const [s3ExportCreds, setS3ExportCreds] = useState({
@@ -190,6 +193,30 @@ export default function App() {
 
   const handleFileUpload = async (e) => {
     const files = Array.from(e.target.files);
+    if (files.length === 0) return;
+
+    setLoading(true);
+    for (const file of files) {
+      await processFileUpload(file);
+    }
+    setLoading(false);
+  };
+
+  // Drag & Drop Handlers
+  const handleDragOver = (e) => {
+    e.preventDefault();
+    setIsDragging(true);
+  };
+
+  const handleDragLeave = (e) => {
+    e.preventDefault();
+    setIsDragging(false);
+  };
+
+  const handleDrop = async (e) => {
+    e.preventDefault();
+    setIsDragging(false);
+    const files = Array.from(e.dataTransfer.files);
     if (files.length === 0) return;
 
     setLoading(true);
@@ -553,7 +580,11 @@ export default function App() {
 
   const handleOpenDownloadModal = () => {
     setSelectedFilesToDownload(activeDataset ? [activeDataset] : Object.keys(savedWorkspace));
-    setDownloadModalOpen(true);
+    if (extractionTarget === 'aws' && s3ExportCreds.accessKeyId && s3ExportCreds.secretAccessKey && !awsLoggedIn) {
+      setAwsConfirmDialog(true);
+    } else {
+      setDownloadModalOpen(true);
+    }
   };
 
   const handleConfirmMultiDownload = async () => {
@@ -1062,44 +1093,52 @@ export default function App() {
                 ⚡ Quick Data Ingestion Hub
               </Typography>
 
-              {/* 4-COLUMN RESPONSIVE GRID LAYOUT */}
+              {/* 3-COLUMN RESPONSIVE GRID LAYOUT (Unified "Import Files" Card with Stacked Layout) */}
               <div style={{
                 display: 'grid',
-                gridTemplateColumns: 'repeat(4, minmax(0, 1fr))',
-                gap: '12px',
+                gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
+                gap: '16px',
                 alignItems: 'start',
                 justifyContent: 'center'
               }}>
 
-                {/* 1. Local Files Card */}
-                <div style={{ padding: '12px', background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.02)', maxWidth: '280px', width: '100%', margin: '0 auto' }}>
-                  <div style={{ marginBottom: '6px' }}>
-                    <div style={{ width: '30px', height: '30px', borderRadius: '8px', background: '#EDE9FE', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#8B5CF6' }}>
-                      <CloudUploadIcon sx={{ fontSize: 16 }} />
+                {/* 1. UNIFIED "Import Files" Card (Stacked Vertical Design) */}
+                <div style={{ padding: '14px', background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.02)', maxWidth: '340px', width: '100%', margin: '0 auto' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', marginBottom: '4px' }}>
+                    <div style={{ width: '30px', height: '30px', borderRadius: '8px', background: '#EDE9FE', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#8B5CF6', marginRight: '8px' }}>
+                      <FolderOpenIcon sx={{ fontSize: 16 }} />
+                    </div>
+                    <div>
+                      <div style={{ fontSize: '13px', fontWeight: '800', color: '#1E293B' }}>
+                        Import Files
+                      </div>
+                      <div style={{ fontSize: '9.5px', color: '#64748B' }}>
+                        Browse local files or enter a direct URL path
+                      </div>
                     </div>
                   </div>
 
-                  <div style={{ fontSize: '13px', fontWeight: '800', color: '#1E293B' }}>
-                    Local Files
-                  </div>
-
-                  <div style={{ fontSize: '10.5px', color: '#64748B', marginBottom: '8px' }}>
-                    Upload files from your local system
-                  </div>
-
-                  <div style={{ padding: '10px 8px', borderRadius: '10px', background: '#F8FAFC', border: '1px dashed #CBD5E1', textAlign: 'center' }}>
+                  {/* Top Section: Local File / Drag & Drop */}
+                  <div 
+                    onDragOver={handleDragOver}
+                    onDragLeave={handleDragLeave}
+                    onDrop={handleDrop}
+                    style={{ 
+                      marginTop: '8px',
+                      padding: '12px 6px', 
+                      borderRadius: '8px', 
+                      background: isDragging ? '#F3E8FF' : '#F8FAFC', 
+                      border: isDragging ? '2px dashed #8B5CF6' : '1px dashed #CBD5E1', 
+                      textAlign: 'center',
+                      transition: 'all 0.2s ease'
+                    }}
+                  >
                     <div style={{ marginBottom: '2px' }}>
-                      <CloudUploadIcon sx={{ fontSize: 28, color: "#8B5CF6" }} />
+                      <CloudUploadIcon sx={{ fontSize: 22, color: "#8B5CF6" }} />
                     </div>
-
-                    <Typography sx={{ fontSize: '11px', fontWeight: 700, color: "#1E293B" }}>
-                      Drag & Drop Files
+                    <Typography sx={{ fontSize: '10px', fontWeight: 700, color: "#1E293B" }}>
+                      Drag & Drop Files Here
                     </Typography>
-
-                    <Typography sx={{ mt: 0.1, color: "#64748B", fontSize: '9.5px', textAlign: "center" }}>
-                      Drop files here or browse device
-                    </Typography>
-
                     <Button
                       component="label"
                       variant="contained"
@@ -1107,15 +1146,39 @@ export default function App() {
                         mt: 1,
                         borderRadius: "6px",
                         textTransform: "none",
-                        fontSize: "10px",
-                        py: 0.3,
+                        fontSize: "9.5px",
+                        py: 0.2,
                         px: 1.2,
                         background: "linear-gradient(135deg,#8B5CF6,#6D28D9)"
                       }}
                     >
-                      Browse Files
+                      Browse Device
                       <input hidden multiple type="file" onChange={handleFileUpload} />
                     </Button>
+                  </div>
+
+                  <Divider sx={{ my: 1.5 }}>
+                    <span style={{ fontSize: '9px', fontWeight: 700, color: '#94A3B8', textTransform: 'uppercase' }}>OR</span>
+                  </Divider>
+
+                  {/* Bottom Section: Direct URL Input */}
+                  <div className="space-y-1">
+                    <Typography sx={{ fontSize: '10px', fontWeight: 700, color: '#1E293B', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                      <LinkIcon sx={{ fontSize: 13, color: '#16A34A' }} /> Direct URL / Copypath
+                    </Typography>
+                    <input
+                      value={urlInput}
+                      onChange={(e) => setUrlInput(e.target.value)}
+                      placeholder="https://example.com/data.csv"
+                      style={{ fontSize: '10px', padding: '5px 8px', width: '100%', borderRadius: '6px', border: '1px solid #CBD5E1', background: '#FFF' }}
+                    />
+                    <button
+                      style={{ marginTop: '6px', fontSize: '10px', width: '100%', background: '#16A34A', color: '#fff', border: 'none', borderRadius: '6px', fontWeight: 700, cursor: 'pointer', padding: '5px' }}
+                      onClick={() => processUrlFetch()}
+                      disabled={!urlInput || loading}
+                    >
+                      {loading ? "Fetching URL..." : "Fetch & Ingest URL"}
+                    </button>
                   </div>
                 </div>
 
@@ -1273,43 +1336,7 @@ export default function App() {
                   )}
                 </div>
 
-                {/* 3. Direct URL Card */}
-                <div style={{ padding: '12px', background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.02)', maxWidth: '280px', width: '100%', margin: '0 auto' }}>
-                  <div style={{ marginBottom: '6px' }}>
-                    <div style={{ width: '30px', height: '30px', borderRadius: '8px', background: '#DCFCE7', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#16A34A' }}>
-                      <LinkIcon sx={{ fontSize: 16 }} />
-                    </div>
-                  </div>
-
-                  <div style={{ fontSize: '13px', fontWeight: '800', color: '#1E293B' }}>
-                    Direct URL
-                  </div>
-
-                  <div style={{ fontSize: '10.5px', color: '#64748B', marginBottom: '8px' }}>
-                    Fetch Data from any Public URL
-                  </div>
-
-                  <div style={{ background: '#ECFDF5', border: '1px solid #A7F3D0', borderRadius: '10px', padding: '8px', color: '#065F46', marginTop: '8px', fontSize: '10px' }}>
-                    🔒 Secure Encrypted Connection
-                  </div>
-
-                  <input
-                    value={urlInput}
-                    onChange={(e) => setUrlInput(e.target.value)}
-                    placeholder="https://example.com/data.csv"
-                    style={{ marginTop: '10px', fontSize: '10px', padding: '6px 8px', width: '100%', borderRadius: '6px', border: '1px solid #CBD5E1', background: '#FFF' }}
-                  />
-
-                  <button
-                    style={{ marginTop: '12px', fontSize: '10.5px', width: '100%', background: '#16A34A', color: '#fff', border: 'none', borderRadius: '6px', fontWeight: 700, cursor: 'pointer', padding: '6px' }}
-                    onClick={() => processUrlFetch()}
-                    disabled={!urlInput || loading}
-                  >
-                    {loading ? "Fetching..." : "Fetch Data"}
-                  </button>
-                </div>
-
-                {/* 4. Amazon S3 Card */}
+                {/* 3. Amazon S3 Card */}
                 <div style={{ padding: '12px', background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.02)', maxWidth: '280px', width: '100%', margin: '0 auto' }}>
                   <div style={{ marginBottom: '6px' }}>
                     <div style={{ width: '30px', height: '30px', borderRadius: '8px', background: '#FEF3C7', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#D97706' }}>
@@ -1408,6 +1435,50 @@ export default function App() {
         <DialogActions className="p-2">
           <Button onClick={handleHomeDisagree} color="inherit" className="text-[10px]" style={{ color: '#64748B' }}>Disagree</Button>
           <Button onClick={handleHomeAgree} variant="contained" className="font-bold text-[10px]" style={{ backgroundColor: '#4F46E5', color: '#FFFFFF', boxShadow: 'none' }}>Agree</Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* AWS Credentials Verification Dialog */}
+      <Dialog open={awsConfirmDialog} onClose={() => setAwsConfirmDialog(false)} maxWidth="xs" fullWidth>
+        <DialogTitle className="flex items-center font-bold text-xs" style={{ color: '#D97706' }}>
+          <WarningAmberIcon className="mr-1" fontSize="small" /> Verify AWS Credentials
+        </DialogTitle>
+        <DialogContent className="space-y-2 pt-1">
+          <DialogContentText className="text-[11px]" style={{ color: '#1E293B' }}>
+            We detected previous AWS login credentials in your session. Do you want to use the previously logged-in account, or enter new credentials?
+          </DialogContentText>
+          <div className="p-2 bg-slate-50 border rounded text-[10px]">
+            <div><strong>Cached Access Key ID:</strong> {s3ExportCreds.accessKeyId ? `${s3ExportCreds.accessKeyId.substring(0, 4)}••••••••` : 'None'}</div>
+          </div>
+        </DialogContent>
+        <DialogActions className="p-2">
+          <Button 
+            onClick={() => {
+              setAwsConfirmDialog(false);
+              setS3ExportCreds(prev => ({ ...prev, accessKeyId: '', secretAccessKey: '' }));
+              setAwsLoggedIn(false);
+              setDownloadModalOpen(true);
+            }} 
+            color="inherit" 
+            className="text-[10px]" 
+            style={{ color: '#64748B' }}
+          >
+            Enter New Account
+          </Button>
+          <Button 
+            onClick={async () => {
+              setAwsConfirmDialog(false);
+              setDownloadModalOpen(true);
+              if (s3ExportCreds.accessKeyId && s3ExportCreds.secretAccessKey) {
+                await handleFetchAwsBuckets();
+              }
+            }} 
+            variant="contained" 
+            className="font-bold text-[10px]" 
+            style={{ backgroundColor: '#D97706', color: '#FFFFFF', boxShadow: 'none' }}
+          >
+            Use Previous Account
+          </Button>
         </DialogActions>
       </Dialog>
 
