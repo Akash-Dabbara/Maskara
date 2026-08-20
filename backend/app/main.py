@@ -313,7 +313,12 @@ async def import_table(req: GenericImportReq):
                     table_name=table_name,
                     dataframe_dicts=dataframe_dicts
                 )
+                # 💡 FIX: Intercept failed extraction status and raise an HTTP error so the UI shows it correctly
+                if not success:
+                    raise HTTPException(status_code=400, detail=f"Database Extraction Failed: {msg}")
                 return {"status": "success", "message": msg}
+            except HTTPException:
+                raise
             except Exception as upload_err:
                 traceback.print_exc()
                 raise HTTPException(status_code=500, detail=f"Snowflake Re-upload Failed: {str(upload_err)}")
@@ -329,6 +334,8 @@ async def import_table(req: GenericImportReq):
             "rows": df.height, 
             "columns": df.columns
         }
+    except HTTPException:
+        raise
     except Exception as e:
         traceback.print_exc()
         raise HTTPException(status_code=400, detail=str(e))
@@ -380,7 +387,6 @@ async def list_s3_folders(req: S3FoldersReq):
             region_name=req.region_name
         )
         response = s3.list_objects_v2(Bucket=req.bucket, Delimiter='/')
-        # Clean folder prefixes to return only directory names (e.g. production_db, test_db)
         folders = [p['Prefix'].rstrip('/') for p in response.get('CommonPrefixes', []) if p.get('Prefix')]
         return {"folders": folders}
     except Exception as e:
