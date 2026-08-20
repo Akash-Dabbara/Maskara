@@ -141,6 +141,8 @@ export const exportToSnowflake = async (exportConfig) => {
     role: exportConfig.role,
     table: exportConfig.tableName,
     action: "extract_test_db",
+    dataset_name: exportConfig.datasetName, // 💡 Passes active dataset name to apply rules
+    rules: exportConfig.rules,             // 💡 Passes active anonymization rules
     dataframe_dicts: exportConfig.dataframeDicts
   });
   return response.data;
