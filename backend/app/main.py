@@ -103,6 +103,9 @@ class GenericImportReq(GenericConnectReq):
     custom_dataset_name: Optional[str] = None
     action: Optional[str] = "import"
     dataframe_dicts: Optional[List[Dict[str, Any]]] = None
+    dataset_name: Optional[str] = None
+    rules: Optional[Dict[str, RuleConfig]] = None
+    seed: Optional[int] = 2026
 
     class Config:
         populate_by_name = True
@@ -292,6 +295,9 @@ async def import_table(req: GenericImportReq):
         custom_name = data.get("custom_dataset_name")
         action = data.get("action", "import")
         dataframe_dicts = data.get("dataframe_dicts")
+        dataset_name = data.get("dataset_name")
+        rules = data.get("rules")
+        seed = data.get("seed", 2026)
 
         if data.get("account") or data.get("warehouse") or data.get("driver") == "snowflake":
             data["driver"] = "snowflake"
@@ -303,6 +309,15 @@ async def import_table(req: GenericImportReq):
         schema_name = config.schema or "PUBLIC"
 
         if action == "extract_test_db":
+            # 💡 FIX: Apply anonymization rules to the dataset before uploading to the server
+            if dataset_name and rules:
+                parquet_path = get_parquet_path(dataset_name)
+                if parquet_path.exists():
+                    df_full = pl.read_parquet(parquet_path)
+                    rules_converted = {k: v.model_dump() if hasattr(v, "model_dump") else v for k, v in rules.items()}
+                    df_full = run_anonymization_engine(df_full, rules_converted, seed=seed or 2026, dataset_name=dataset_name)
+                    dataframe_dicts = df_full.to_dicts()
+
             if not dataframe_dicts:
                 raise ValueError("No dataset rows provided for extraction.")
             try:
@@ -313,7 +328,6 @@ async def import_table(req: GenericImportReq):
                     table_name=table_name,
                     dataframe_dicts=dataframe_dicts
                 )
-                # 💡 FIX: Intercept failed extraction status and raise an HTTP error so the UI shows it correctly
                 if not success:
                     raise HTTPException(status_code=400, detail=f"Database Extraction Failed: {msg}")
                 return {"status": "success", "message": msg}
@@ -325,12 +339,12 @@ async def import_table(req: GenericImportReq):
 
         df = fetch_table_to_polars(config, table_name)
         target_name = custom_name if custom_name else f"{database_name}_{schema_name}_{table_name}"
-        dataset_name = clean_filename(target_name)
+        dataset_name_clean = clean_filename(target_name)
         
-        save_df_to_parquet(df, dataset_name)
+        save_df_to_parquet(df, dataset_name_clean)
         return {
             "status": "success", 
-            "dataset_name": dataset_name, 
+            "dataset_name": dataset_name_clean, 
             "rows": df.height, 
             "columns": df.columns
         }
