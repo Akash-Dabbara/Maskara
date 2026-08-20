@@ -5,6 +5,7 @@ import {
   Select, FormControl, InputLabel, FormControlLabel, Checkbox, Button, Box, TextField, Typography, TablePagination
 } from '@mui/material';
 import LockIcon from '@mui/icons-material/Lock';
+import SecurityIcon from '@mui/icons-material/Security';
 import ArrowDropDownIcon from '@mui/icons-material/ArrowDropDown';
 import SearchIcon from '@mui/icons-material/Search';
 
@@ -29,7 +30,8 @@ export default function DataPreviewTable({
   rowsPerPage = 100, 
   onRowsPerPageChange,
   onPageChange,
-  onSaveRule 
+  onSaveRule,
+  isExecuted = false
 }) {
   const [anchorEl, setAnchorEl] = useState(null);
   const [activeCol, setActiveCol] = useState(null);
@@ -76,16 +78,22 @@ export default function DataPreviewTable({
                 return (
                   <TableCell 
                     key={col} 
-                    /* 💡 Made column header text bold per instructions */
-                    className="bg-slate-100 font-extrabold text-slate-900 cursor-pointer hover:bg-slate-200 transition-colors px-1.5 py-0.5 text-[8.5px]"
+                    className="bg-slate-100 font-extrabold text-slate-900 cursor-pointer hover:bg-slate-200 transition-colors px-2 py-1 text-[11px]"
                     style={{ whiteSpace: 'nowrap', fontWeight: 800 }}
                     onClick={(e) => handleHeaderClick(e, col)}
                   >
-                    <div className="flex items-center justify-between space-x-1">
-                      <span className="truncate">{col}</span>
-                      <div className="flex items-center space-x-0.2">
-                        {isConfigured && <LockIcon style={{ fontSize: 8 }} className="text-indigo-600" titleAccess={rule.algo} />}
-                        <ArrowDropDownIcon style={{ fontSize: 11 }} className="text-slate-600" />
+                    <div className="flex items-center justify-between space-x-1.5">
+                      {/* Increased font size for column name */}
+                      <span className="truncate text-[11px] font-extrabold">{col}</span>
+                      <div className="flex items-center space-x-0.5">
+                        {isConfigured && (
+                          isExecuted ? (
+                            <SecurityIcon style={{ fontSize: 11, color: '#059669' }} titleAccess={rule.algo} />
+                          ) : (
+                            <LockIcon style={{ fontSize: 9 }} className="text-indigo-600" titleAccess={rule.algo} />
+                          )
+                        )}
+                        <ArrowDropDownIcon style={{ fontSize: 12 }} className="text-slate-600" />
                       </div>
                     </div>
                   </TableCell>
@@ -99,7 +107,7 @@ export default function DataPreviewTable({
                 {columns.map((col) => (
                   <TableCell 
                     key={col} 
-                    className="text-[7.5px] font-mono text-slate-700 px-1.5 py-0.2" 
+                    className="text-[9px] font-mono text-slate-700 px-2 py-0.5" 
                     style={{ whiteSpace: 'nowrap' }}
                   >
                     {row[col] !== null && row[col] !== undefined ? String(row[col]) : <span className="text-slate-300 italic">null</span>}
@@ -109,7 +117,7 @@ export default function DataPreviewTable({
             ))}
             {paginatedData.length === 0 && (
               <TableRow>
-                <TableCell colSpan={columns.length} className="text-center py-4 text-slate-400 italic text-[9px]">
+                <TableCell colSpan={columns.length} className="text-center py-4 text-slate-400 italic text-[10px]">
                   No preview records available.
                 </TableCell>
               </TableRow>

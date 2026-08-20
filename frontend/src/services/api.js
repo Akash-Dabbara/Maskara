@@ -9,7 +9,8 @@ const getApiBaseUrl = () => {
     }
     return envUrl;
   }
-  return 'http://localhost:8000/api';
+  // 💡 Permanent fallback to your live backend URL (Replace with your actual Render/Railway backend URL)
+  return 'https://your-backend-name.onrender.com/api';
 };
 
 const API_BASE_URL = getApiBaseUrl();

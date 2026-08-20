@@ -722,7 +722,7 @@ export default function App() {
       <header
         className="relative flex items-center justify-between px-6 border-b flex-shrink-0"
         style={{
-          background: '#FFFFFF',
+          background: '#cde9f8',
           borderColor: '#E2E8F0',
           boxShadow: '0 2px 12px rgba(0,0,0,0.03)',
           zIndex: 10,
@@ -784,15 +784,17 @@ export default function App() {
         </div>
 
         {activeDataset ? (
-          <div className="flex items-center space-x-2.5">
-            <label className="switch" title="Toggle Anonymization View">
-              <input
-                type="checkbox"
-                checked={isAnonymizedView}
-                onChange={(e) => handleToggleView(e.target.checked)}
-              />
-              <span className="slider"></span>
-            </label>
+          <div className="flex items-center space-x-4">
+            {isExecuted && (
+              <label className="switch" title="Toggle Anonymization View">
+                <input
+                  type="checkbox"
+                  checked={isAnonymizedView}
+                  onChange={(e) => handleToggleView(e.target.checked)}
+                />
+                <span className="slider"></span>
+              </label>
+            )}
 
             {hasConfiguredRules && (
               <Button
@@ -827,6 +829,7 @@ export default function App() {
               onClick={() => setIsFullScreenTable(!isFullScreenTable)}
               title="Expand Table to Complete Screen"
               sx={{
+                ml: 1,
                 background: "#F1F5F9",
                 border: "1px solid #E2E8F0",
                 color: "#334155",
@@ -1515,6 +1518,7 @@ export default function App() {
                   }}
                   onPageChange={handlePageChange}
                   onSaveRule={handleSaveRule}
+                  isExecuted={isExecuted}
                 />
               </div>
             </div>
