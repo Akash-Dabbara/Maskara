@@ -9,8 +9,8 @@ const getApiBaseUrl = () => {
     }
     return envUrl;
   }
-  // 💡 Permanent fallback to your live backend URL (Replace with your actual Render/Railway backend URL)
-  return 'https://your-backend-name.onrender.com/api';
+  // 💡 Permanent fallback to your live Render backend URL
+  return 'https://maskara-backend.onrender.com/api';
 };
 
 const API_BASE_URL = getApiBaseUrl();
@@ -67,7 +67,6 @@ export const exportToS3 = async (exportConfig) => {
   return response.data;
 };
 
-// 💡 NEW: Fetch S3 Buckets & Folders for Dynamic Dropdowns
 export const fetchAwsBuckets = async (credentials) => {
   const response = await axios.post(`${API_BASE_URL}/ingest/s3/buckets`, {
     region_name: credentials.region || "us-east-1",
